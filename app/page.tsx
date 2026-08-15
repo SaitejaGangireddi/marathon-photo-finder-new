@@ -23,7 +23,7 @@ export default function MarathonFaceFinder() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selfieFile) {
-      alert('Please upload or capture a selfie first.');
+      alert('Please upload or take a selfie first.');
       return;
     }
 
@@ -32,22 +32,23 @@ export default function MarathonFaceFinder() {
     setPhotos([]);
 
     try {
-      // Send search request
+      const formData = new FormData();
+      formData.append('file', selfieFile);
+
       const res = await fetch('/api/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: selfieFile.name }),
+        body: formData,
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Search failed');
+        throw new Error(data.error || 'Face search failed');
       }
 
       setPhotos(data.photos || []);
     } catch (err: any) {
       console.error(err);
-      alert(`Search failed: ${err.message || 'Error connecting to database'}`);
+      alert(err.message || 'Error running face search.');
     } finally {
       setLoading(false);
     }
@@ -144,7 +145,7 @@ export default function MarathonFaceFinder() {
 
           {hasSearched && photos.length === 0 && !loading && (
             <div className="text-center py-16 bg-neutral-900/40 rounded-2xl border border-neutral-800 text-neutral-400">
-              No matching photos found. Make sure the photos have been processed via Google Colab.
+              No matching photos found.
             </div>
           )}
 
