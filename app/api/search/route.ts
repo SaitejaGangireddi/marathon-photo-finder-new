@@ -8,44 +8,27 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
 export async function POST(req: NextRequest) {
   try {
-    const { bibNumber, faceEmbedding } = await req.json();
-    const results: any[] = [];
+    const { embedding } = await req.json();
 
-    // 1. Search by Bib Number
-    if (bibNumber && bibNumber.trim() !== '') {
-      const { data: bibData, error: bibError } = await supabase
-        .from('photos')
-        .select('id, image_url, bib_numbers')
-        .contains('bib_numbers', [bibNumber.trim()]);
-
-      if (!bibError && bibData) {
-        results.push(...bibData);
-      }
+    if (!embedding || !Array.isArray(embedding) || embedding.length !== 512) {
+      return NextResponse.json(
+        { error: 'Valid 512-dimension face embedding required.' },
+        { status: 400 }
+      );
     }
 
-    // 2. Search by Vector Similarity
-    if (faceEmbedding && Array.isArray(faceEmbedding) && faceEmbedding.length === 512) {
-      const { data: faceData, error: faceError } = await supabase.rpc('match_face_photos', {
-        query_embedding: faceEmbedding,
-        match_threshold: 0.45,
-        match_count: 60,
-      });
-
-      if (!faceError && faceData) {
-        results.push(...faceData);
-      }
-    }
-
-    // Deduplicate
-    const uniqueMap = new Map();
-    results.forEach((item) => {
-      const key = item.id || item.photo_id;
-      if (!uniqueMap.has(key)) {
-        uniqueMap.set(key, item);
-      }
+    // Query Supabase pgvector RPC for cosine similarity
+    const { data, error } = await supabase.rpc('match_face_photos', {
+      query_embedding: embedding,
+      match_threshold: 0.38, // Balance between accuracy and group shot recall
+      match_count: 50,
     });
 
-    return NextResponse.json({ photos: Array.from(uniqueMap.values()) });
+    if (error) {
+      throw error;
+    }
+
+    return NextResponse.json({ photos: data || [] });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
