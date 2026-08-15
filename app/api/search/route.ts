@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { embedding } = body;
 
-    // Vector similarity search if embedding array is present
+    // Vector similarity search if 512D embedding is provided
     if (embedding && Array.isArray(embedding) && embedding.length === 512) {
       const { data, error } = await supabase.rpc('match_face_photos', {
         query_embedding: embedding,
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ photos: data || [] });
     }
 
-    // Default: Fetch latest indexed photos
+    // Default fallback: Return latest indexed photos
     const { data: photos, error: photoErr } = await supabase
       .from('photos')
       .select('id, image_url')
