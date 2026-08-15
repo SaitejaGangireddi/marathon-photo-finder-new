@@ -2,10 +2,11 @@
 
 import React, { useState, useRef } from 'react';
 
-export default function SelfieSearchPage() {
+export default function MarathonFaceFinder() {
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
   const [photos, setPhotos] = useState<any[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -16,13 +17,14 @@ export default function SelfieSearchPage() {
       setSelfieFile(file);
       setPreviewUrl(URL.createObjectURL(file));
       setHasSearched(false);
+      setPhotos([]);
     }
   };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selfieFile) {
-      alert('Please select or capture a selfie first.');
+      alert('Please upload or take a selfie first.');
       return;
     }
 
@@ -31,26 +33,50 @@ export default function SelfieSearchPage() {
     setPhotos([]);
 
     try {
-      const formData = new FormData();
-      formData.append('file', selfieFile);
+      setStatusText('Analyzing face features...');
 
-      // Extract embedding and search matching photos
-      const res = await fetch('/api/extract-and-search', {
+      // 1. Dynamic import of browser transformers pipeline
+      const { pipeline, env } = await import('@xenova/transformers');
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+
+      // 2. Extract feature embedding from selfie image
+      const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+        quantized: true,
+      });
+
+      // Convert file to Image Bitmap / canvas representation
+      const imgUrl = URL.createObjectURL(selfieFile);
+      const output = await extractor(imgUrl, { pooling: 'mean', normalize: true });
+      const rawVector = Array.from(output.data);
+
+      // Format vector to 512 dimensions for Supabase pgvector compatibility
+      let embedding: number[] = rawVector.slice(0, 512);
+      while (embedding.length < 512) {
+        embedding.push(0);
+      }
+
+      setStatusText('Searching matched photos in database...');
+
+      // 3. Query the Supabase search route
+      const res = await fetch('/api/search', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ embedding }),
       });
 
       const data = await res.json();
-      if (res.ok) {
-        setPhotos(data.photos || []);
-      } else {
-        alert(data.error || 'Face match failed');
+      if (!res.ok) {
+        throw new Error(data.error || 'Server error searching photos');
       }
-    } catch (err) {
+
+      setPhotos(data.photos || []);
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to search photos.');
+      alert(`Search failed: ${err.message || 'Check console'}`);
     } finally {
       setLoading(false);
+      setStatusText('');
     }
   };
 
@@ -70,11 +96,11 @@ export default function SelfieSearchPage() {
             AI Marathon Face Finder
           </h1>
           <p className="text-neutral-400 mt-2 text-sm md:text-base">
-            Upload your selfie to instantly retrieve all solo and group photos featuring you.
+            Upload your selfie to retrieve all solo and group photos featuring you.
           </p>
         </header>
 
-        {/* Upload Card */}
+        {/* Upload Box */}
         <form
           onSubmit={handleSearch}
           className="bg-neutral-900 border border-neutral-800 p-6 md:p-8 rounded-2xl max-w-xl mx-auto shadow-2xl mb-12"
@@ -111,14 +137,14 @@ export default function SelfieSearchPage() {
               </div>
             ) : (
               <div>
-                <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mx-auto mb-3 text-amber-400 text-2xl">
-                  📸
+                <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mx-auto mb-3 text-amber-400 text-3xl">
+                  👤
                 </div>
                 <p className="text-base font-semibold text-neutral-200">
-                  Click to Upload or Take a Selfie
+                  Click to Upload or Capture Selfie
                 </p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  JPG, PNG, or WEBP (A clear, forward-facing photo works best)
+                  JPG, PNG, or WEBP
                 </p>
               </div>
             )}
@@ -129,11 +155,11 @@ export default function SelfieSearchPage() {
             disabled={loading || !selfieFile}
             className="w-full mt-6 py-3.5 bg-amber-400 hover:bg-amber-500 text-neutral-950 font-bold rounded-xl transition text-base disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            {loading ? 'Finding Your Race Photos...' : 'Find My Photos'}
+            {loading ? statusText || 'Processing...' : 'Find My Photos'}
           </button>
         </form>
 
-        {/* Gallery Results */}
+        {/* Results Gallery */}
         <section>
           {hasSearched && (
             <div className="flex justify-between items-center mb-6">
@@ -145,7 +171,7 @@ export default function SelfieSearchPage() {
 
           {hasSearched && photos.length === 0 && !loading && (
             <div className="text-center py-16 bg-neutral-900/40 rounded-2xl border border-neutral-800 text-neutral-400">
-              No matching photos found. Make sure photos have been indexed via Colab.
+              No matching photos found. Make sure the Google Colab script has completed indexing.
             </div>
           )}
 
