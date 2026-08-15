@@ -6,7 +6,6 @@ export default function MarathonFaceFinder() {
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState('');
   const [photos, setPhotos] = useState<any[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,7 +23,7 @@ export default function MarathonFaceFinder() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selfieFile) {
-      alert('Please upload or take a selfie first.');
+      alert('Please upload or capture a selfie first.');
       return;
     }
 
@@ -33,50 +32,24 @@ export default function MarathonFaceFinder() {
     setPhotos([]);
 
     try {
-      setStatusText('Analyzing face features...');
-
-      // 1. Dynamic import of browser transformers pipeline
-      const { pipeline, env } = await import('@xenova/transformers');
-      env.allowLocalModels = false;
-      env.useBrowserCache = true;
-
-      // 2. Extract feature embedding from selfie image
-      const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        quantized: true,
-      });
-
-      // Convert file to Image Bitmap / canvas representation
-      const imgUrl = URL.createObjectURL(selfieFile);
-      const output = await extractor(imgUrl, { pooling: 'mean', normalize: true });
-      const rawVector = Array.from(output.data);
-
-      // Format vector to 512 dimensions for Supabase pgvector compatibility
-      let embedding: number[] = rawVector.slice(0, 512);
-      while (embedding.length < 512) {
-        embedding.push(0);
-      }
-
-      setStatusText('Searching matched photos in database...');
-
-      // 3. Query the Supabase search route
+      // Send search request
       const res = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ embedding }),
+        body: JSON.stringify({ filename: selfieFile.name }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Server error searching photos');
+        throw new Error(data.error || 'Search failed');
       }
 
       setPhotos(data.photos || []);
     } catch (err: any) {
       console.error(err);
-      alert(`Search failed: ${err.message || 'Check console'}`);
+      alert(`Search failed: ${err.message || 'Error connecting to database'}`);
     } finally {
       setLoading(false);
-      setStatusText('');
     }
   };
 
@@ -155,7 +128,7 @@ export default function MarathonFaceFinder() {
             disabled={loading || !selfieFile}
             className="w-full mt-6 py-3.5 bg-amber-400 hover:bg-amber-500 text-neutral-950 font-bold rounded-xl transition text-base disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            {loading ? statusText || 'Processing...' : 'Find My Photos'}
+            {loading ? 'Finding Your Race Photos...' : 'Find My Photos'}
           </button>
         </form>
 
@@ -171,7 +144,7 @@ export default function MarathonFaceFinder() {
 
           {hasSearched && photos.length === 0 && !loading && (
             <div className="text-center py-16 bg-neutral-900/40 rounded-2xl border border-neutral-800 text-neutral-400">
-              No matching photos found. Make sure the Google Colab script has completed indexing.
+              No matching photos found. Make sure the photos have been processed via Google Colab.
             </div>
           )}
 
